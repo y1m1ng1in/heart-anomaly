@@ -31,6 +31,7 @@ class Dataset:
 class NaiveBayesian:
 
   def __init__(self, dataset, m=0.5):
+    self.m = m
     self.dataset = dataset
     self.__feature_prob()
     self.__feature_prob_given_negative()
@@ -44,11 +45,11 @@ class NaiveBayesian:
     self.n = [1-p for p in self.p]
 
   def __feature_prob_given_positive(self):
-    self.p_given_p = self.__probabilities(self.dataset.positive)
+    self.p_given_p = self.__probabilities(self.dataset.positive, m=True)
     self.n_given_p = [1-p for p in self.p_given_p]
 
   def __feature_prob_given_negative(self):
-    self.p_given_n = self.__probabilities(self.dataset.negative)
+    self.p_given_n = self.__probabilities(self.dataset.negative, m=True)
     self.n_given_n = [1-p for p in self.p_given_n]
 
   def __positive_prob(self):
@@ -57,7 +58,7 @@ class NaiveBayesian:
   def __negative_prob(self):
     self.n_entry = self.dataset.n_negative / self.dataset.n
 
-  def __probabilities(self, entries):
+  def __probabilities(self, entries, m=False):
     assert entries
     n_entries = len(entries)
     result = [0 for _ in range(self.dataset.n_feature)]
@@ -65,8 +66,11 @@ class NaiveBayesian:
       for j in range(self.dataset.n_feature):
         result[j] += entries[i][j]
     for i in range(self.dataset.n_feature):
-      result[i] /= n_entries
-      assert result[i] >= 0 and result[i] <= 1
+      if not m:
+        result[i] /= n_entries
+      else:
+        result[i] = (result[i] + self.m) / (n_entries + self.m)
+      assert result[i] > 0 and result[i] <= 1
     return result
     
 
