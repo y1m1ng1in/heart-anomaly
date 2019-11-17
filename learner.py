@@ -1,3 +1,6 @@
+import math
+import argparse
+
 class Dataset:
   
   def __init__(self, filename):
@@ -32,47 +35,101 @@ class NaiveBayesian:
 
   def __init__(self, dataset, m=0.5):
     self.m = m
-    self.dataset = dataset
-    self.__feature_prob()
-    self.__feature_prob_given_negative()
-    self.__feature_prob_given_positive()
-    self.__positive_prob()
-    self.__negative_prob()
-    print(self.p_entry, self.n_entry)
+    self.training_set = dataset
+    self.__learn()
 
-  def __feature_prob(self):
-    self.p = self.__probabilities(self.dataset.entries)
-    self.n = [1-p for p in self.p]
-
-  def __feature_prob_given_positive(self):
-    self.p_given_p = self.__probabilities(self.dataset.positive, m=True)
-    self.n_given_p = [1-p for p in self.p_given_p]
-
-  def __feature_prob_given_negative(self):
-    self.p_given_n = self.__probabilities(self.dataset.negative, m=True)
-    self.n_given_n = [1-p for p in self.p_given_n]
-
-  def __positive_prob(self):
-    self.p_entry = self.dataset.n_positive / self.dataset.n
-
-  def __negative_prob(self):
-    self.n_entry = self.dataset.n_negative / self.dataset.n
-
-  def __probabilities(self, entries, m=False):
-    assert entries
-    n_entries = len(entries)
-    result = [0 for _ in range(self.dataset.n_feature)]
-    for i in range(n_entries):
-      for j in range(self.dataset.n_feature):
-        result[j] += entries[i][j]
-    for i in range(self.dataset.n_feature):
-      if not m:
-        result[i] /= n_entries
-      else:
-        result[i] = (result[i] + self.m) / (n_entries + self.m)
-      assert result[i] > 0 and result[i] <= 1
-    return result
+  def __learn(self):
+    self.feature_matrix = [[0 for _ in range(self.training_set.n_feature)], 
+                           [0 for _ in range(self.training_set.n_feature)]]
+    self.counts = [0, 0]
     
+    for i in range(self.training_set.n):
+      label = self.training_set.labels[i]
+      self.counts[label] += 1
+      for j in range(self.training_set.n_feature):
+        if self.training_set.entries[i][j] == 1:
+          self.feature_matrix[label][j] += 1
 
-f = Dataset('./data/spect-itg.train.csv')
-n = NaiveBayesian(f)
+  def classify(self, testset):
+    assert testset.n_feature == self.training_set.n_feature
+    true_positive, true_negative, false_positive, false_negative = 0, 0, 0, 0
+
+    for i in range(testset.n_positive):
+      if self.__likelihood(testset.positive[i], 1) > self.__likelihood(testset.positive[i], 0):
+        true_positive += 1
+      else:
+        false_positive += 1
+    
+    for i in range(testset.n_negative):
+      if self.__likelihood(testset.negative[i], 0) > self.__likelihood(testset.negative[i], 1):
+        true_negative += 1
+      else:
+        false_negative += 1
+
+    return true_negative, true_positive,
+  
+  def __likelihood(self, entry, c):
+    likelihood = (math.log(self.counts[c] + self.m) 
+                  - math.log(self.counts[0] + self.counts[1] + self.m))
+    for i in range(len(entry)):
+      s = self.feature_matrix[c][i]
+      if entry[i] == 0:
+        s = self.counts[c] - s
+      likelihood += math.log(s + self.m) - math.log(self.counts[c] + self.m)
+    return likelihood
+
+
+def filename(f):
+  return './data/spect-' + f +'.train.csv', './data/spect-' + f +'.test.csv' 
+
+def print_stats(true_negative, true_positive, testset, filename):
+  accuracy = (true_positive + true_negative) / testset.n
+  true_negative_rate = true_negative / testset.n_negative
+  true_positive_rate = true_positive / testset.n_positive
+  
+  print(filename, 
+        str(true_positive + true_negative) + '/' + str(testset.n) + '(' + str(accuracy) + ')',
+        str(true_negative) + '/' + str(testset.n_negative) + '(' + str(true_negative_rate) + ')',
+        str(true_positive) + '/' + str(testset.n_positive) + '(' + str(true_positive_rate) + ')') 
+
+
+choices = [
+  'naive-bayesian',
+]
+
+file_choices = [
+  'itg',
+  'orig',
+  'resplit-itg',
+  'resplit'
+]
+
+parser = argparse.ArgumentParser(description="heart anomaly detector")
+parser.add_argument('--learner', 
+                    '-l', 
+                    type=str, 
+                    choices=choices, 
+                    default=choices[0], 
+                    help="what learner would you like to use?")
+parser.add_argument('--estimator',
+                    '-e',
+                    type=float,
+                    default=0.5,
+                    help="m-estimator")
+parser.add_argument('--dataset',
+                    '-d',
+                    type=str,
+                    choices=file_choices,
+                    default=file_choices[0],
+                    help="choose a dataset to learn and test")
+
+args = parser.parse_args()
+fn = args.dataset
+m = args.estimator
+
+training, test = filename(fn)
+f = Dataset(training)
+t = Dataset(test)
+n = NaiveBayesian(f, m=m)
+r1, r2 = n.classify(t)
+print_stats(r1, r2, t, fn)
